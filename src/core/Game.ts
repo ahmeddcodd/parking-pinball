@@ -70,7 +70,7 @@ export class Game {
     this.audio.init(this.save.data.sound, this.save.data.music);
     this.input = new InputManager(canvas);
     this.mats = new SharedMaterials(this.scene);
-    this.car = new CarController(this.scene);
+    this.car = new CarController(this.scene, this.mats);
     this.car.setSkin(CARS[this.save.data.selectedCar] ?? CARS[0]);
     this.launcher = new LauncherController(this.scene, this.input, this.phys);
     this.cameraCtl = new CameraController(this.scene);

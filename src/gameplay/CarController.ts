@@ -6,24 +6,31 @@ import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
 import type { CarSkin } from "../data/cars";
 import type { ArcadePhysics } from "./ArcadePhysics";
+import type { SharedMaterials } from "../objects/Materials";
 import { TUNING } from "../data/tuning";
 import { clamp, damp, dampAngle, lerp } from "../utils/MathUtils";
 
+const WHEEL_RADIUS = 0.17;
+
 /**
  * The visible toy car. Physics drives a point + velocity; this class
- * gives it a body, turns it to face its motion, and adds the juice:
- * squash while charging, stretch on launch, thump on landing.
+ * gives it a body and the juice: squash while charging, stretch on
+ * launch, thump on landing, wheels that actually spin.
+ *
+ * Build (facing +Z): dark skirt, glossy body, chrome-ish bumper bars,
+ * tinted glass canopy under an accent roof, emissive head/tail lights,
+ * four wheels on pivots (tire + hub) that roll with ground speed.
  */
 export class CarController {
   readonly root: TransformNode;
   yaw = 0;
 
-  private body!: Mesh;
-  private cabin!: Mesh;
   private shadow: Mesh;
   private bodyMat: StandardMaterial;
-  private cabinMat: StandardMaterial;
+  private roofMat: StandardMaterial;
   private carScale: TransformNode;
+  private wheels: TransformNode[] = [];
+  private wheelSpin = 0;
 
   private charge = 0; // 0..1 while aiming
   private stretchPulse = 0; // >0 right after launch
@@ -33,72 +40,136 @@ export class CarController {
   private roll = 0;
   private pitch = 0;
 
-  constructor(private scene: Scene) {
+  constructor(
+    private scene: Scene,
+    mats: SharedMaterials
+  ) {
     this.root = new TransformNode("car-root", scene);
     this.carScale = new TransformNode("car-scale", scene);
     this.carScale.parent = this.root;
 
     this.bodyMat = new StandardMaterial("car-body-mat", scene);
-    this.bodyMat.specularColor = new Color3(0.35, 0.35, 0.35);
-    this.cabinMat = new StandardMaterial("car-cabin-mat", scene);
-    this.cabinMat.specularColor = new Color3(0.4, 0.4, 0.45);
+    this.bodyMat.specularColor = new Color3(0.55, 0.55, 0.6);
+    this.bodyMat.specularPower = 28;
+    this.roofMat = new StandardMaterial("car-roof-mat", scene);
+    this.roofMat.specularColor = new Color3(0.4, 0.4, 0.45);
 
-    this.buildMeshes();
+    this.buildMeshes(mats);
 
     // fake blob shadow — cheap and mobile-friendly
-    this.shadow = MeshBuilder.CreateDisc("car-shadow", { radius: 0.62, tessellation: 20 }, scene);
+    this.shadow = MeshBuilder.CreateDisc("car-shadow", { radius: 0.68, tessellation: 22 }, scene);
     this.shadow.rotation.x = Math.PI / 2;
     const shadowMat = new StandardMaterial("car-shadow-mat", scene);
     shadowMat.diffuseColor = Color3.Black();
     shadowMat.specularColor = Color3.Black();
-    shadowMat.alpha = 0.28;
+    shadowMat.alpha = 0.25;
     shadowMat.disableLighting = true;
     shadowMat.emissiveColor = new Color3(0.02, 0.03, 0.05);
     this.shadow.material = shadowMat;
     this.shadow.isPickable = false;
   }
 
-  private buildMeshes(): void {
+  private buildMeshes(mats: SharedMaterials): void {
     const s = this.scene;
+    const parts: Mesh[] = [];
 
-    this.body = MeshBuilder.CreateBox("car-body", { width: 0.72, height: 0.3, depth: 1.15 }, s);
-    this.body.position.y = 0.3;
-    this.body.material = this.bodyMat;
+    const skirtMat = new StandardMaterial("car-skirt-mat", s);
+    skirtMat.diffuseColor = new Color3(0.16, 0.18, 0.24);
+    skirtMat.specularColor = new Color3(0.1, 0.1, 0.1);
 
-    this.cabin = MeshBuilder.CreateBox("car-cabin", { width: 0.6, height: 0.26, depth: 0.55 }, s);
-    this.cabin.position.set(0, 0.55, -0.08);
-    this.cabin.material = this.cabinMat;
+    const tireMat = new StandardMaterial("car-tire-mat", s);
+    tireMat.diffuseColor = new Color3(0.13, 0.14, 0.18);
+    tireMat.specularColor = new Color3(0.12, 0.12, 0.12);
 
-    const wheelMat = new StandardMaterial("car-wheel-mat", s);
-    wheelMat.diffuseColor = new Color3(0.13, 0.14, 0.18);
-    wheelMat.specularColor = new Color3(0.1, 0.1, 0.1);
+    const hubMat = new StandardMaterial("car-hub-mat", s);
+    hubMat.diffuseColor = new Color3(0.82, 0.85, 0.92);
+    hubMat.specularColor = new Color3(0.5, 0.5, 0.5);
 
-    const lightMat = new StandardMaterial("car-light-mat", s);
-    lightMat.diffuseColor = new Color3(1, 0.95, 0.6);
-    lightMat.emissiveColor = new Color3(0.7, 0.62, 0.25);
+    const headMat = new StandardMaterial("car-head-mat", s);
+    headMat.diffuseColor = new Color3(1, 0.95, 0.65);
+    headMat.emissiveColor = new Color3(0.85, 0.78, 0.35);
 
-    const wheelProto = MeshBuilder.CreateCylinder("car-wheel", { diameter: 0.34, height: 0.14, tessellation: 12 }, s);
-    wheelProto.rotation.z = Math.PI / 2;
-    wheelProto.material = wheelMat;
-    wheelProto.position.set(-0.38, 0.17, 0.36);
-    const wheelPositions: Array<[number, number]> = [
-      [0.38, 0.36],
-      [-0.38, -0.36],
-      [0.38, -0.36],
+    const tailMat = new StandardMaterial("car-tail-mat", s);
+    tailMat.diffuseColor = new Color3(1, 0.3, 0.3);
+    tailMat.emissiveColor = new Color3(0.7, 0.12, 0.12);
+
+    // dark underbody skirt
+    const skirt = MeshBuilder.CreateBox("car-skirt", { width: 0.68, height: 0.14, depth: 1.14 }, s);
+    skirt.position.y = 0.18;
+    skirt.material = skirtMat;
+    parts.push(skirt);
+
+    // main body
+    const body = MeshBuilder.CreateBox("car-body", { width: 0.76, height: 0.26, depth: 1.3 }, s);
+    body.position.y = 0.34;
+    body.material = this.bodyMat;
+    parts.push(body);
+
+    // hood + trunk steps (adds silhouette without more polys than boxes)
+    const hood = MeshBuilder.CreateBox("car-hood", { width: 0.7, height: 0.09, depth: 0.34 }, s);
+    hood.position.set(0, 0.5, 0.42);
+    hood.material = this.bodyMat;
+    parts.push(hood);
+    const trunk = MeshBuilder.CreateBox("car-trunk", { width: 0.7, height: 0.07, depth: 0.22 }, s);
+    trunk.position.set(0, 0.49, -0.5);
+    trunk.material = this.bodyMat;
+    parts.push(trunk);
+
+    // glass canopy + accent roof
+    const glass = MeshBuilder.CreateBox("car-glass", { width: 0.6, height: 0.2, depth: 0.6 }, s);
+    glass.position.set(0, 0.56, -0.06);
+    glass.material = mats.glass;
+    parts.push(glass);
+    const roof = MeshBuilder.CreateBox("car-roof", { width: 0.56, height: 0.09, depth: 0.5 }, s);
+    roof.position.set(0, 0.7, -0.06);
+    roof.material = this.roofMat;
+    parts.push(roof);
+
+    // chrome-ish bumper bars
+    const frontBar = MeshBuilder.CreateBox("car-bumper-f", { width: 0.78, height: 0.12, depth: 0.1 }, s);
+    frontBar.position.set(0, 0.24, 0.66);
+    frontBar.material = mats.trim;
+    parts.push(frontBar);
+    const rearBar = MeshBuilder.CreateBox("car-bumper-r", { width: 0.78, height: 0.12, depth: 0.1 }, s);
+    rearBar.position.set(0, 0.24, -0.66);
+    rearBar.material = mats.trim;
+    parts.push(rearBar);
+
+    // lights
+    const mkLamp = (name: string, mat: StandardMaterial, x: number, z: number): void => {
+      const lamp = MeshBuilder.CreateBox(name, { width: 0.15, height: 0.09, depth: 0.05 }, s);
+      lamp.position.set(x, 0.38, z);
+      lamp.material = mat;
+      parts.push(lamp);
+    };
+    mkLamp("car-head-l", headMat, 0.22, 0.66);
+    mkLamp("car-head-r", headMat, -0.22, 0.66);
+    mkLamp("car-tail-l", tailMat, 0.22, -0.66);
+    mkLamp("car-tail-r", tailMat, -0.22, -0.66);
+
+    // wheels: pivot (spins on X) → tire + hub
+    const wheelPos: Array<[number, number]> = [
+      [0.4, 0.42],
+      [-0.4, 0.42],
+      [0.4, -0.42],
+      [-0.4, -0.42],
     ];
-    const parts: Mesh[] = [this.body, this.cabin, wheelProto];
-    for (const [x, z] of wheelPositions) {
-      const w = wheelProto.clone("car-wheel-c");
-      w.position.set(x, 0.17, z);
-      parts.push(w);
+    for (const [x, z] of wheelPos) {
+      const pivot = new TransformNode("car-wheel-pivot", s);
+      pivot.position.set(x, WHEEL_RADIUS, z);
+      pivot.parent = this.carScale;
+      const tire = MeshBuilder.CreateCylinder("car-tire", { diameter: WHEEL_RADIUS * 2, height: 0.15, tessellation: 14 }, s);
+      tire.rotation.z = Math.PI / 2;
+      tire.material = tireMat;
+      tire.parent = pivot;
+      tire.isPickable = false;
+      const hub = MeshBuilder.CreateCylinder("car-hub", { diameter: 0.17, height: 0.16, tessellation: 10 }, s);
+      hub.rotation.z = Math.PI / 2;
+      hub.material = hubMat;
+      hub.parent = pivot;
+      hub.isPickable = false;
+      this.wheels.push(pivot);
     }
-
-    const lightProto = MeshBuilder.CreateBox("car-lamp", { width: 0.14, height: 0.1, depth: 0.06 }, s);
-    lightProto.material = lightMat;
-    lightProto.position.set(0.2, 0.32, 0.58);
-    const lamp2 = lightProto.clone("car-lamp-2");
-    lamp2.position.x = -0.2;
-    parts.push(lightProto, lamp2);
 
     for (const p of parts) {
       p.parent = this.carScale;
@@ -108,7 +179,7 @@ export class CarController {
 
   setSkin(skin: CarSkin): void {
     this.bodyMat.diffuseColor = Color3.FromHexString(skin.body);
-    this.cabinMat.diffuseColor = Color3.FromHexString(skin.accent);
+    this.roofMat.diffuseColor = Color3.FromHexString(skin.accent);
   }
 
   /** 0..1 while the player is pulling back. */
@@ -145,6 +216,11 @@ export class CarController {
       const targetYaw = Math.atan2(phys.vel.x, phys.vel.z);
       this.yaw = dampAngle(this.yaw, targetYaw, TUNING.physics.headingTurnRate, dt);
     }
+
+    // wheels roll with ground speed (sign = forward/backward motion)
+    const fwd = phys.vel.x * Math.sin(this.yaw) + phys.vel.z * Math.cos(this.yaw);
+    this.wheelSpin += (fwd / WHEEL_RADIUS) * dt;
+    for (const w of this.wheels) w.rotation.x = this.wheelSpin;
 
     // body lean from lateral acceleration, nose pitch from jumps
     const ax = (phys.vel.x - this.prevVelX) / Math.max(dt, 1e-4);

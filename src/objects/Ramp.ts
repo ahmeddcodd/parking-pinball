@@ -46,25 +46,39 @@ export class Ramp {
     this.root.rotation.y = rot;
 
     // sloped face (a tilted box reads perfectly from the iso camera)
+    const slopeAngle = -Math.atan2(0.55, l);
     const slope = MeshBuilder.CreateBox("ramp-slope", { width: w, height: 0.12, depth: l * 1.04 }, scene);
-    slope.rotation.x = -Math.atan2(0.55, l);
+    slope.rotation.x = slopeAngle;
     slope.position.set(0, 0.26, 0);
     slope.material = mats.ramp;
     slope.parent = this.root;
     slope.isPickable = false;
 
-    // white chevron stripe
-    const stripe = MeshBuilder.CreateBox("ramp-stripe", { width: w * 0.35, height: 0.125, depth: l * 0.5 }, scene);
-    stripe.rotation.x = slope.rotation.x;
-    stripe.position.set(0, 0.275, 0.1);
-    stripe.material = mats.rampStripe;
-    stripe.parent = this.root;
-    stripe.isPickable = false;
+    // side rails
+    for (const side of [-1, 1]) {
+      const rail = MeshBuilder.CreateBox("ramp-rail", { width: 0.1, height: 0.16, depth: l * 1.02 }, scene);
+      rail.rotation.x = slopeAngle;
+      rail.position.set(side * (w / 2 - 0.05), 0.33, 0);
+      rail.material = mats.rampStripe;
+      rail.parent = this.root;
+      rail.isPickable = false;
+    }
 
-    // back support
-    const back = MeshBuilder.CreateBox("ramp-back", { width: w, height: 0.5, depth: 0.18 }, scene);
-    back.position.set(0, 0.25, l / 2 - 0.06);
-    back.material = mats.ramp;
+    // white chevron arrows pointing up the ramp
+    for (let i = 0; i < 2; i++) {
+      const arrow = MeshBuilder.CreateDisc("ramp-arrow", { radius: 0.24, tessellation: 3 }, scene);
+      arrow.rotation.x = Math.PI / 2 + slopeAngle;
+      arrow.rotation.y = Math.PI; // triangle points +Z (up the ramp)
+      arrow.position.set(0, 0.34 + i * 0.15, -0.35 + i * 0.72);
+      arrow.material = mats.rampStripe;
+      arrow.parent = this.root;
+      arrow.isPickable = false;
+    }
+
+    // hazard-striped back support
+    const back = MeshBuilder.CreateBox("ramp-back", { width: w, height: 0.56, depth: 0.18 }, scene);
+    back.position.set(0, 0.28, l / 2 - 0.06);
+    back.material = mats.rampBack;
     back.parent = this.root;
     back.isPickable = false;
   }
@@ -96,6 +110,7 @@ export class Ramp {
   }
 
   dispose(): void {
-    this.root.dispose(false, true);
+    // materials are shared — dispose meshes only
+    this.root.dispose();
   }
 }

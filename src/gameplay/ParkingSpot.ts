@@ -3,7 +3,9 @@ import { TransformNode } from "@babylonjs/core/Meshes/transformNode";
 import { MeshBuilder } from "@babylonjs/core/Meshes/meshBuilder";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
+import type { Mesh } from "@babylonjs/core/Meshes/mesh";
 import type { ArcadePhysics } from "./ArcadePhysics";
+import type { SharedMaterials } from "../objects/Materials";
 import type { SpotData } from "../data/levels";
 import { TUNING } from "../data/tuning";
 import { alignmentError, clamp, degToRad, radToDeg } from "../utils/MathUtils";
@@ -35,10 +37,12 @@ export class ParkingSpot {
   private dwell = 0;
   private fill: ReturnType<typeof MeshBuilder.CreateGround>;
   private fillMat: StandardMaterial;
+  private halo: Mesh | null = null;
+  private haloMat: StandardMaterial | null = null;
   private pulseT = 0;
   private celebrating = false;
 
-  constructor(scene: Scene, data: SpotData, isDecoy = false) {
+  constructor(scene: Scene, mats: SharedMaterials, data: SpotData, isDecoy = false) {
     this.x = data.x;
     this.z = data.z;
     this.rotation = degToRad(data.rotation);
@@ -69,6 +73,27 @@ export class ParkingSpot {
     mk("spot-l", lineW, this.halfL * 2, -this.halfW, 0);
     mk("spot-r", lineW, this.halfL * 2, this.halfW, 0);
     mk("spot-b", this.halfW * 2 + lineW, lineW, 0, this.halfL);
+    // entry corner ticks
+    mk("spot-c1", lineW, 0.5, -this.halfW, -this.halfL + 0.25);
+    mk("spot-c2", lineW, 0.5, this.halfW, -this.halfL + 0.25);
+    mk("spot-e1", 0.5, lineW, -this.halfW + 0.25, -this.halfL);
+    mk("spot-e2", 0.5, lineW, this.halfW - 0.25, -this.halfL);
+
+    // soft glow halo under the real target
+    if (!isDecoy) {
+      this.halo = MeshBuilder.CreateGround(
+        "spot-halo",
+        { width: this.halfW * 2 + 1.6, height: this.halfL * 2 + 1.6 },
+        scene
+      );
+      this.halo.position.y = 0.008;
+      this.halo.parent = this.root;
+      this.halo.isPickable = false;
+      this.haloMat = mats.glow.clone("spot-halo-mat");
+      this.haloMat.emissiveColor = new Color3(0.35, 1, 0.55);
+      this.haloMat.alpha = 0.5;
+      this.halo.material = this.haloMat;
+    }
 
     // glowing fill
     this.fill = MeshBuilder.CreateGround(
@@ -155,6 +180,7 @@ export class ParkingSpot {
       const base = this.isDecoy ? 0.16 : 0.26;
       const boost = !this.isDecoy && inside ? 0.25 : 0;
       this.fillMat.alpha = base + boost + Math.sin(this.pulseT * 3) * 0.06;
+      if (this.haloMat) this.haloMat.alpha = 0.42 + Math.sin(this.pulseT * 3) * 0.16 + boost * 0.5;
     }
 
     return {
@@ -170,9 +196,17 @@ export class ParkingSpot {
     this.celebrating = true;
     this.fillMat.emissiveColor = perfect ? new Color3(1, 0.85, 0.2) : new Color3(0.3, 1, 0.45);
     this.fillMat.alpha = 0.75;
+    if (this.haloMat) {
+      this.haloMat.emissiveColor = perfect ? new Color3(1, 0.85, 0.25) : new Color3(0.35, 1, 0.55);
+      this.haloMat.alpha = 0.9;
+    }
   }
 
   dispose(): void {
+    // the halo material clone shares the glow texture — detach it so the
+    // recursive dispose below can't destroy the shared texture
+    if (this.halo) this.halo.material = null;
+    this.haloMat?.dispose();
     this.root.dispose(false, true);
   }
 }

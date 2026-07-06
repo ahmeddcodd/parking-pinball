@@ -16,6 +16,7 @@ import { ScoreManager, type FinalScore } from "./ScoreManager";
 import { ComboManager } from "./ComboManager";
 import { ParkingSpot } from "./ParkingSpot";
 import { SharedMaterials } from "../objects/Materials";
+import { Scenery } from "../objects/Scenery";
 import { Wall } from "../objects/Wall";
 import { Bumper } from "../objects/Bumper";
 import { Coin } from "../objects/Coin";
@@ -43,6 +44,8 @@ export class LevelController {
   data!: LevelData;
 
   private ground: Mesh | null = null;
+  private asphalt: Mesh | null = null;
+  private scenery: Scenery | null = null;
   private walls: Wall[] = [];
   private bumpers: Bumper[] = [];
   private coins: Coin[] = [];
@@ -105,31 +108,44 @@ export class LevelController {
 
     const { width, depth } = data.ground;
 
-    // lot floor (a shallow box so the edge reads in 3D)
-    this.ground = MeshBuilder.CreateBox("ground", { width, height: 0.4, depth }, this.scene);
+    // lot floor: concrete curb box + textured asphalt surface on top
+    this.ground = MeshBuilder.CreateBox("ground", { width: width + 0.5, height: 0.4, depth: depth + 0.5 }, this.scene);
     this.ground.position.y = -0.2;
-    this.ground.material = this.mats.ground;
+    this.ground.material = this.mats.curb;
     this.ground.isPickable = false;
+    this.asphalt = MeshBuilder.CreateGround("asphalt", { width, height: depth }, this.scene);
+    this.asphalt.position.y = 0.004;
+    this.asphalt.material = this.mats.ground;
+    this.asphalt.isPickable = false;
+    this.mats.asphaltTex.uScale = width / 5;
+    this.mats.asphaltTex.vScale = depth / 5;
     this.phys.grounds = [{ x: 0, z: 0, halfW: width / 2, halfD: depth / 2 }];
+
+    // decorative world around the lot
+    this.scenery = new Scenery(this.scene, this.mats, data.id, width, depth);
 
     // border rails
     this.phys.walls = [];
     this.phys.bumpers = [];
     const t = 0.35;
     const bh = 0.55;
+    const border = (x: number, z: number, w: number, d: number) =>
+      new Wall(this.scene, this.phys, this.mats.border, this.mats.borderCap, x, z, w, d, 0, bh);
     this.walls = [
-      new Wall(this.scene, this.phys, this.mats.border, 0, depth / 2 + t / 2, width + t * 2, t, 0, bh),
-      new Wall(this.scene, this.phys, this.mats.border, 0, -depth / 2 - t / 2, width + t * 2, t, 0, bh),
-      new Wall(this.scene, this.phys, this.mats.border, width / 2 + t / 2, 0, t, depth, 0, bh),
-      new Wall(this.scene, this.phys, this.mats.border, -width / 2 - t / 2, 0, t, depth, 0, bh),
+      border(0, depth / 2 + t / 2, width + t * 2, t),
+      border(0, -depth / 2 - t / 2, width + t * 2, t),
+      border(width / 2 + t / 2, 0, t, depth),
+      border(-width / 2 - t / 2, 0, t, depth),
     ];
 
     // target + objects
-    this.spot = new ParkingSpot(this.scene, data.target);
+    this.spot = new ParkingSpot(this.scene, this.mats, data.target);
     for (const o of data.objects) {
       switch (o.type) {
         case "wall":
-          this.walls.push(new Wall(this.scene, this.phys, this.mats.wall, o.x, o.z, o.w, o.d, o.rot ?? 0, o.h ?? 0.6));
+          this.walls.push(
+            new Wall(this.scene, this.phys, this.mats.wall, this.mats.wallCap, o.x, o.z, o.w, o.d, o.rot ?? 0, o.h ?? 0.6)
+          );
           break;
         case "bumper":
           this.bumpers.push(new Bumper(this.scene, this.phys, this.mats, o.x, o.z, o.radius, o.force));
@@ -150,6 +166,7 @@ export class LevelController {
           this.decoys.push(
             new ParkingSpot(
               this.scene,
+              this.mats,
               { x: o.x, z: o.z, rotation: o.rotation ?? 0, width: o.width ?? 2.7, length: o.length ?? 4.0 },
               true
             )
@@ -158,12 +175,21 @@ export class LevelController {
         case "cone": {
           const cone = MeshBuilder.CreateCylinder(
             "cone",
-            { diameterBottom: 0.42, diameterTop: 0.05, height: 0.6, tessellation: 10 },
+            { diameterBottom: 0.44, diameterTop: 0.06, height: 0.62, tessellation: 12 },
             this.scene
           );
-          cone.position.set(o.x, 0.3, o.z);
+          cone.position.set(o.x, 0.31, o.z);
           cone.material = this.mats.cone;
           cone.isPickable = false;
+          const band = MeshBuilder.CreateCylinder(
+            "cone-band",
+            { diameterBottom: 0.3, diameterTop: 0.2, height: 0.14, tessellation: 12 },
+            this.scene
+          );
+          band.position.y = 0.06;
+          band.material = this.mats.coneBand;
+          band.parent = cone;
+          band.isPickable = false;
           this.cones.push(cone);
           break;
         }
@@ -311,6 +337,7 @@ export class LevelController {
   // ────────────────────────────────────────────── frame update
 
   update(dt: number): void {
+    this.scenery?.update(dt);
     for (const b of this.bumpers) b.update(dt);
     for (const c of this.coins) c.update(dt);
 
@@ -438,6 +465,10 @@ export class LevelController {
     this.launcher.disarm();
     this.ground?.dispose();
     this.ground = null;
+    this.asphalt?.dispose();
+    this.asphalt = null;
+    this.scenery?.dispose();
+    this.scenery = null;
     for (const w of this.walls) w.dispose();
     for (const b of this.bumpers) b.dispose();
     for (const c of this.coins) c.dispose();

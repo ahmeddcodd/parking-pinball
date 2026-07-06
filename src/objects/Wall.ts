@@ -6,15 +6,19 @@ import type { ArcadePhysics, WallCollider } from "../gameplay/ArcadePhysics";
 import { TUNING } from "../data/tuning";
 import { degToRad } from "../utils/MathUtils";
 
-/** Static box obstacle. Mesh + one collider entry, nothing dynamic. */
+/**
+ * Static box obstacle: body + a lighter rounded-looking top cap so the
+ * barrier reads as molded plastic. One collider entry, nothing dynamic.
+ */
 export class Wall {
   readonly mesh: Mesh;
-  private collider: WallCollider;
+  private cap: Mesh;
 
   constructor(
     scene: Scene,
     phys: ArcadePhysics,
     material: StandardMaterial,
+    capMaterial: StandardMaterial,
     x: number,
     z: number,
     w: number,
@@ -28,8 +32,14 @@ export class Wall {
     this.mesh.material = material;
     this.mesh.isPickable = false;
 
+    this.cap = MeshBuilder.CreateBox("wall-cap", { width: w + 0.06, height: 0.08, depth: d + 0.06 }, scene);
+    this.cap.position.set(x, h + 0.04, z);
+    this.cap.rotation.y = this.mesh.rotation.y;
+    this.cap.material = capMaterial;
+    this.cap.isPickable = false;
+
     const rot = degToRad(rotDeg);
-    this.collider = {
+    const collider: WallCollider = {
       x,
       z,
       halfW: w / 2,
@@ -40,10 +50,11 @@ export class Wall {
       restitution: TUNING.physics.wallRestitution,
       ref: this,
     };
-    phys.walls.push(this.collider);
+    phys.walls.push(collider);
   }
 
   dispose(): void {
     this.mesh.dispose();
+    this.cap.dispose();
   }
 }

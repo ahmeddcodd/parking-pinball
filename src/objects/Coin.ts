@@ -22,11 +22,21 @@ export class Coin {
 
   constructor(scene: Scene, mats: SharedMaterials, private x: number, private z: number, value = 10) {
     this.value = value;
-    this.mesh = MeshBuilder.CreateCylinder("coin", { diameter: 0.62, height: 0.09, tessellation: 16 }, scene);
+    this.mesh = MeshBuilder.CreateCylinder("coin", { diameter: 0.62, height: 0.1, tessellation: 18 }, scene);
     this.mesh.rotation.x = Math.PI / 2;
     this.mesh.position.set(x, this.baseY, z);
     this.mesh.material = mats.coin;
     this.mesh.isPickable = false;
+
+    // star face on both sides
+    for (const side of [1, -1]) {
+      const face = MeshBuilder.CreateDisc("coin-face", { radius: 0.24, tessellation: 18 }, scene);
+      face.position.y = side * 0.052; // along the (rotated) cylinder axis
+      face.rotation.x = side > 0 ? -Math.PI / 2 : Math.PI / 2;
+      face.material = mats.coinFace;
+      face.parent = this.mesh;
+      face.isPickable = false;
+    }
   }
 
   resetAttempt(): void {
