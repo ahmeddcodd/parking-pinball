@@ -15,6 +15,9 @@ dist-ssr
 # Vercel
 .vercel
 
+# Playables upload bundle (regenerate with `npm run pack:playable`)
+*.zip
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
