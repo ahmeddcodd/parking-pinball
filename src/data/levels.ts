@@ -120,19 +120,19 @@ export const LEVELS: LevelData[] = [
     ],
   },
 
-  // ── 4 · power control: short lane, oil at the back ───────────────
+  // ── 4 · power control: short lane, pits at the back ──────────────
   {
     id: 4,
     world: "sunny_lot",
     name: "Soft Touch",
-    hint: "Gently! Too hard and the oil eats you.",
+    hint: "Gently! Overshoot and you drop straight in.",
     ground: { width: 10, depth: 14 },
     start: { x: 0, z: -4.8, angle: 0 },
     target: { x: 0, z: 1.0, rotation: 0, width: 2.5, length: 3.8 },
     attempts: 3,
     starScores: [1000, 1800, 2500],
     objects: [
-      // wall-to-wall oil: overshooting is fatal at any angle
+      // wall-to-wall pits: overshooting drops the car at any angle
       { type: "hazard", x: -3.0, z: 4.6, radius: 1.3 },
       { type: "hazard", x: -1.0, z: 5.0, radius: 1.3 },
       { type: "hazard", x: 1.0, z: 5.0, radius: 1.3 },
@@ -161,7 +161,7 @@ export const LEVELS: LevelData[] = [
     objects: [
       { type: "ramp", x: 0, z: -1.2, rot: 0, w: 2.6, l: 2.2 },
       { type: "wall", x: 0, z: 1.2, w: 11, d: 0.5, h: 0.85 },
-      // miss the ramp and you're funnelled into oil
+      // miss the ramp and you're funnelled into a pit
       { type: "hazard", x: -3.6, z: -1.0, radius: 1.2 },
       { type: "hazard", x: 3.6, z: -1.0, radius: 1.2 },
       // landing zone is fenced: overshoot bounces back
@@ -223,12 +223,12 @@ export const LEVELS: LevelData[] = [
     ],
   },
 
-  // ── 8 · tight oil slalom with a moving-gate feel ─────────────────
+  // ── 8 · tight pit slalom with a moving-gate feel ─────────────────
   {
     id: 8,
     world: "sunny_lot",
-    name: "Oil Slalom",
-    hint: "Oil means game over. Thread every gap!",
+    name: "Pothole Alley",
+    hint: "Mind the holes! Thread every gap.",
     ground: { width: 11, depth: 18 },
     start: { x: 0, z: -6.8, angle: 0 },
     target: { x: 0, z: 6.6, rotation: 0, width: 2.6, length: 3.8 },
@@ -293,7 +293,7 @@ export const LEVELS: LevelData[] = [
       // narrow bay walls
       { type: "wall", x: -1.95, z: 6.2, w: 0.5, d: 4.0 },
       { type: "wall", x: 1.95, z: 6.2, w: 0.5, d: 4.0 },
-      // oil pinches the run-up
+      // pits pinch the run-up
       { type: "hazard", x: -3.4, z: -1.8, radius: 1.15 },
       { type: "hazard", x: 3.4, z: -1.8, radius: 1.15 },
       { type: "hazard", x: -4.2, z: 3.2, radius: 1.1 },

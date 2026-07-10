@@ -127,6 +127,7 @@ export class LevelController {
     // border rails
     this.phys.walls = [];
     this.phys.bumpers = [];
+    this.phys.holes = [];
     const t = 0.35;
     const bh = 0.55;
     const border = (x: number, z: number, w: number, d: number) =>
@@ -159,9 +160,12 @@ export class LevelController {
           this.ramps.push(ramp);
           break;
         }
-        case "hazard":
-          this.hazards.push(new Hazard(this.scene, this.mats, o.x, o.z, o.radius));
+        case "hazard": {
+          const hole = new Hazard(this.scene, this.mats, o.x, o.z, o.radius);
+          hole.addCollider(this.phys); // subtracts ground; the car falls in
+          this.hazards.push(hole);
           break;
+        }
         case "decoy":
           this.decoys.push(
             new ParkingSpot(
@@ -217,7 +221,6 @@ export class LevelController {
     this.spot?.resetAttempt();
     for (const dcy of this.decoys) dcy.resetAttempt();
     for (const c of this.coins) c.resetAttempt();
-    for (const h of this.hazards) h.resetAttempt();
     for (const r of this.ramps) r.resetAttempt();
 
     this.score.startAttempt(this.attemptIndex);
@@ -376,20 +379,22 @@ export class LevelController {
 
     // ramps
     for (const r of this.ramps) r.update(dt);
-
-    // hazards
-    for (const h of this.hazards) {
-      if (h.check(phys)) {
-        this.effects.dust(phys.pos.x, phys.pos.z);
-        this.failAttempt("Hit the oil! 🛢️");
-        return;
-      }
-    }
   }
 
   private updateOutcomes(dt: number): void {
     const phys = this.phys;
     const A = TUNING.attempt;
+
+    // dropped into a pit — resolve as soon as the car is clearly below the
+    // lot, rather than waiting out the full fall to the out-of-bounds plane
+    if (phys.pos.y < -0.9) {
+      for (const h of this.hazards) {
+        if (h.contains(phys)) {
+          this.failAttempt("Down the hole! 🕳️");
+          return;
+        }
+      }
+    }
 
     // fell off the lot
     if (phys.pos.y < TUNING.physics.outOfBoundsY) {
@@ -487,5 +492,6 @@ export class LevelController {
     this.spot = null;
     this.phys.walls = [];
     this.phys.bumpers = [];
+    this.phys.holes = [];
   }
 }

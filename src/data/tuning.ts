@@ -19,6 +19,7 @@ export const TUNING = {
     maxSpin: 9, // rad/s clamp (anti-spin)
     outOfBoundsY: -6, // fell below arena → fail
     fallEdgeMargin: 0.1, // how far past ground edge before falling
+    holeGrip: 0.82, // fraction of a hole's radius the car center must cross to fall in
   },
 
   launch: {

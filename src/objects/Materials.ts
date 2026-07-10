@@ -21,7 +21,9 @@ export class SharedMaterials {
   readonly bumperRing: StandardMaterial;
   readonly coin: StandardMaterial;
   readonly coinFace: StandardMaterial;
-  readonly hazard: StandardMaterial;
+  readonly holeWall: StandardMaterial;
+  readonly holeVoid: StandardMaterial;
+  readonly holeRim: StandardMaterial;
   readonly ramp: StandardMaterial;
   readonly rampStripe: StandardMaterial;
   readonly rampBack: StandardMaterial;
@@ -73,9 +75,17 @@ export class SharedMaterials {
     this.coinFace.useAlphaFromDiffuseTexture = true;
     this.coinFace.backFaceCulling = false;
 
-    this.hazard = mk("mat-hazard", "#23262f", 0, 0.9);
-    this.hazard.specularPower = 24;
-    this.hazard.emissiveColor = new Color3(0.05, 0.06, 0.1);
+    // pit shaft: dark, unlit so it stays black at any camera angle
+    this.holeWall = mk("mat-hole-wall", "#2b3040");
+    this.holeWall.specularColor = Color3.Black();
+    this.holeWall.emissiveColor = new Color3(0.05, 0.06, 0.09);
+    this.holeVoid = mk("mat-hole-void", "#0b0d14");
+    this.holeVoid.specularColor = Color3.Black();
+    this.holeVoid.disableLighting = true;
+    this.holeVoid.diffuseColor = Color3.Black();
+    this.holeVoid.emissiveColor = new Color3(0.02, 0.02, 0.04);
+    // rim catches the light so the lip is unmistakable from above
+    this.holeRim = mk("mat-hole-rim", "#59617a", 0.12, 0.25);
 
     this.ramp = mk("mat-ramp", "#4fb9ea", 0.12);
     this.rampStripe = mk("mat-ramp-stripe", "#ffffff", 0.45);

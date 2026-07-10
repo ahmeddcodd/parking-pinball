@@ -42,6 +42,13 @@ export interface GroundRect {
   halfD: number;
 }
 
+/** A circular pit punched out of the lot. The car falls in if it drives over. */
+export interface HoleCollider {
+  x: number;
+  z: number;
+  radius: number;
+}
+
 const P = TUNING.physics;
 
 export class ArcadePhysics {
@@ -52,6 +59,7 @@ export class ArcadePhysics {
   walls: WallCollider[] = [];
   bumpers: BumperCollider[] = [];
   grounds: GroundRect[] = [];
+  holes: HoleCollider[] = [];
 
   /** Extra damping applied this frame (parking auto-brake). */
   extraDamping = 0;
@@ -113,12 +121,37 @@ export class ArcadePhysics {
     this.assistForce.setAll(0);
   }
 
+  /**
+   * Is there solid lot under this point?
+   *
+   * Holes are subtracted from the ground, so the existing gravity/landing
+   * logic does the rest: over a hole there is nothing to land on, so the car
+   * simply falls through and trips the out-of-bounds check. Airborne cars are
+   * unaffected — this is only consulted at ground level, so a ramp jump sails
+   * straight over a pit.
+   *
+   * The car is a circle, but testing its center against a slightly shrunken
+   * hole is what feels right: clipping the very lip lets you scrape past,
+   * while committing the car's middle over the edge drops you in.
+   */
   private isOverGround(x: number, z: number): boolean {
     const m = P.fallEdgeMargin;
+    let onLot = false;
     for (const g of this.grounds) {
-      if (Math.abs(x - g.x) <= g.halfW + m && Math.abs(z - g.z) <= g.halfD + m) return true;
+      if (Math.abs(x - g.x) <= g.halfW + m && Math.abs(z - g.z) <= g.halfD + m) {
+        onLot = true;
+        break;
+      }
     }
-    return false;
+    if (!onLot) return false;
+
+    for (const h of this.holes) {
+      const dx = x - h.x;
+      const dz = z - h.z;
+      const r = h.radius * P.holeGrip;
+      if (dx * dx + dz * dz < r * r) return false;
+    }
+    return true;
   }
 
   private substep(dt: number): void {
