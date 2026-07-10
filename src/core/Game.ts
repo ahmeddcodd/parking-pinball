@@ -112,7 +112,11 @@ export class Game {
     const unlock = () => this.audio.unlock();
     document.addEventListener("pointerdown", unlock, { passive: true });
 
-    window.addEventListener("resize", () => this.engine.resize());
+    window.addEventListener("resize", () => {
+      this.engine.resize();
+      // aspect ratio changed → the arena needs re-framing
+      this.cameraCtl.onResize();
+    });
   }
 
   start(): void {

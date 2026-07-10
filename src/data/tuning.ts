@@ -88,11 +88,22 @@ export const TUNING = {
 
   camera: {
     alpha: -Math.PI / 2, // look "up" the arena (+z away from camera)
-    beta: 0.92, // ~53° from vertical — isometric-ish
+    // Tilt from vertical. Tall screens have vertical room to spare, so a
+    // flatter (more top-down) angle spreads the long lot across it. Wide
+    // screens are vertically starved, so a lower, more oblique angle
+    // foreshortens the lot's depth and lets the camera move in closer.
+    beta: 0.78, // ~45° — tall/portrait screens
+    betaWide: 1.22, // ~70° — wide/landscape screens, near-oblique
+    betaBlendAspect: [0.7, 1.7] as [number, number], // aspect range over which beta lerps
     followLerp: 4.2,
     radiusLerp: 3.0,
     speedZoom: 0.28, // extra radius per unit of speed
     minRadius: 10,
+    fitPadding: 0.5, // world units of breathing room around the arena
+    // fraction of the viewport reserved for HUD chrome (top, bottom)
+    safeTop: 0.06,
+    safeBottom: 0.08,
+    followZoomFactor: 0.82, // follow radius = overview × this (+ speed zoom)
     shakeDecay: 6,
     successZoomFactor: 0.72,
   },
