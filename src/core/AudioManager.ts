@@ -1,14 +1,31 @@
+/** Music bus level when the player has music enabled. */
+const MUSIC_VOLUME = 0.16;
+
 /**
  * All audio is synthesized with the Web Audio API — zero audio files,
  * zero download weight, instant load. The context is unlocked on the
  * first user gesture (browser autoplay rules).
+ *
+ * Signal graph:  sfxGain ─┐
+ *                          ├─> masterGain ─> destination
+ *                musicGain ┘
+ *
+ * `masterGain` belongs to the platform: YouTube's audio state drives it and
+ * nothing else does. When YouTube disables audio the master is 0 and the game
+ * is silent no matter what the player's own Sound/Music toggles say — those
+ * only attenuate within what the platform already permits. Keeping the two
+ * layers separate means a platform mute never overwrites (or is overwritten
+ * by) the player's saved preferences.
  */
 export class AudioManager {
   private ctx: AudioContext | null = null;
+  private masterGain!: GainNode;
   private sfxGain!: GainNode;
   private musicGain!: GainNode;
   private sfxOn = true;
   private musicOn = true;
+  /** Platform-authoritative. Only setPlatformAudioEnabled() may change it. */
+  private platformAudioOn = true;
 
   private musicTimer: number | null = null;
   private musicStep = 0;
@@ -26,15 +43,45 @@ export class AudioManager {
       const AC = window.AudioContext ?? (window as any).webkitAudioContext;
       if (!AC) return;
       this.ctx = new AC();
+      this.masterGain = this.ctx.createGain();
+      this.masterGain.gain.value = this.platformAudioOn ? 1 : 0;
+      this.masterGain.connect(this.ctx.destination);
       this.sfxGain = this.ctx.createGain();
       this.sfxGain.gain.value = 0.5;
-      this.sfxGain.connect(this.ctx.destination);
+      this.sfxGain.connect(this.masterGain);
       this.musicGain = this.ctx.createGain();
-      this.musicGain.gain.value = 0.16;
-      this.musicGain.connect(this.ctx.destination);
+      this.musicGain.gain.value = MUSIC_VOLUME;
+      this.musicGain.connect(this.masterGain);
       this.startMusic();
     }
-    if (this.ctx.state === "suspended") void this.ctx.resume();
+    // Never un-suspend behind the platform's back.
+    if (this.platformAudioOn && this.ctx.state === "suspended") void this.ctx.resume();
+  }
+
+  /**
+   * YouTube's audio state. Authoritative and one-way: the game reports it
+   * here and never writes it back to the save.
+   */
+  setPlatformAudioEnabled(enabled: boolean): void {
+    this.platformAudioOn = enabled;
+    if (!this.ctx) return;
+    this.masterGain.gain.value = enabled ? 1 : 0;
+    if (!enabled) {
+      void this.ctx.suspend();
+    } else if (this.ctx.state === "suspended") {
+      void this.ctx.resume();
+    }
+  }
+
+  /** Halt audio for a platform pause, without touching any user preference. */
+  suspend(): void {
+    if (this.ctx && this.ctx.state === "running") void this.ctx.suspend();
+  }
+
+  /** Resume after a platform pause — unless YouTube still forbids audio. */
+  resume(): void {
+    if (!this.platformAudioOn) return;
+    if (this.ctx && this.ctx.state === "suspended") void this.ctx.resume();
   }
 
   setSound(on: boolean): void {
@@ -43,7 +90,7 @@ export class AudioManager {
 
   setMusic(on: boolean): void {
     this.musicOn = on;
-    if (this.ctx) this.musicGain.gain.value = on ? 0.16 : 0;
+    if (this.ctx) this.musicGain.gain.value = on ? MUSIC_VOLUME : 0;
   }
 
   // ────────────────────────────────────────────────────────── helpers
@@ -178,7 +225,7 @@ export class AudioManager {
 
   private startMusic(): void {
     if (!this.ctx || this.musicTimer !== null) return;
-    this.musicGain.gain.value = this.musicOn ? 0.16 : 0;
+    this.musicGain.gain.value = this.musicOn ? MUSIC_VOLUME : 0;
     this.nextNoteTime = this.ctx.currentTime + 0.1;
     this.musicStep = 0;
     this.musicTimer = window.setInterval(() => this.scheduleMusic(), 90);

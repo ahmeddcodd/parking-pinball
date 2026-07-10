@@ -6,6 +6,7 @@ import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 
 import { SaveManager } from "./SaveManager";
+import * as Playables from "./Playables";
 import { AudioManager } from "./AudioManager";
 import { InputManager } from "./InputManager";
 import { ArcadePhysics } from "../gameplay/ArcadePhysics";
@@ -33,7 +34,7 @@ export class Game {
   private state: GameState = "menu";
   private settingsFrom: GameState = "menu";
 
-  private save = new SaveManager();
+  private save: SaveManager;
   private audio = new AudioManager();
   private input: InputManager;
   private phys = new ArcadePhysics();
@@ -54,7 +55,13 @@ export class Game {
 
   private currentLevelId = 1;
 
-  constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement) {
+  /** Platform pause is independent of the in-game pause screen. */
+  private platformPaused = false;
+  private renderLoopRunning = false;
+  private readySignalled = false;
+
+  constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement, save: SaveManager) {
+    this.save = save;
     this.engine = new Engine(canvas, true, { stencil: false, preserveDrawingBuffer: false });
     this.engine.setHardwareScalingLevel(1 / Math.min(window.devicePixelRatio || 1, 2));
 
@@ -68,6 +75,8 @@ export class Game {
     dir.intensity = 0.55;
 
     this.audio.init(this.save.data.sound, this.save.data.music);
+    // YouTube's audio state overrides the player's preferences, always.
+    this.audio.setPlatformAudioEnabled(Playables.isAudioEnabled());
     this.input = new InputManager(canvas);
     this.mats = new SharedMaterials(this.scene);
     this.car = new CarController(this.scene, this.mats);
@@ -106,6 +115,7 @@ export class Game {
 
     this.wireUI();
     this.wireDebugKeys();
+    this.wirePlatform();
     if (import.meta.env.DEV) (window as unknown as Record<string, unknown>).__pp = this;
 
     // audio can only start after a user gesture
@@ -121,7 +131,54 @@ export class Game {
 
   start(): void {
     this.showMenu();
+    this.startRenderLoop();
+  }
+
+  // ────────────────────────────────────────────── platform lifecycle
+
+  private wirePlatform(): void {
+    Playables.onPause(() => this.setPlatformPaused(true));
+    Playables.onResume(() => this.setPlatformPaused(false));
+    Playables.onAudioEnabledChange((enabled) => this.audio.setPlatformAudioEnabled(enabled));
+  }
+
+  /**
+   * YouTube pausing us is not the same as the player opening the pause menu:
+   * it can arrive in any state (menu, results, garage), so it can't reuse
+   * `openPause()`, whose guard only accepts playing/settings. We stop the
+   * render loop outright — the loop otherwise renders even while paused.
+   *
+   * There is no guarantee onResume ever fires, so state is flushed to storage
+   * immediately rather than left to the coalescing timer.
+   */
+  private setPlatformPaused(paused: boolean): void {
+    if (this.platformPaused === paused) return;
+    this.platformPaused = paused;
+
+    if (paused) {
+      this.stopRenderLoop();
+      this.audio.suspend();
+      this.input.cancel();
+      this.input.enabled = false;
+      void this.save.flush();
+    } else {
+      this.audio.resume();
+      // only gameplay accepts input; every other screen is DOM-driven
+      this.input.enabled = this.state === "playing";
+      this.startRenderLoop();
+    }
+  }
+
+  private startRenderLoop(): void {
+    if (this.renderLoopRunning) return;
+    this.renderLoopRunning = true;
     this.engine.runRenderLoop(() => this.tick());
+  }
+
+  private stopRenderLoop(): void {
+    if (!this.renderLoopRunning) return;
+    this.renderLoopRunning = false;
+    this.engine.stopRenderLoop();
   }
 
   // ────────────────────────────────────────────── state transitions
@@ -328,5 +385,19 @@ export class Game {
     }
 
     this.scene.render();
+    this.signalReady();
+  }
+
+  /**
+   * Announce readiness to YouTube once the first frame is actually on screen.
+   * The game has no loading screen — `start()` shows the interactive menu
+   * before the loop begins — so the frame that paints it is both the first
+   * frame and the moment the game is playable. Both calls are idempotent.
+   */
+  private signalReady(): void {
+    if (this.readySignalled) return;
+    this.readySignalled = true;
+    Playables.firstFrameReady();
+    Playables.gameReady();
   }
 }
