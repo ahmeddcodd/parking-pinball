@@ -107,6 +107,27 @@ export async function saveData(payload: string): Promise<boolean> {
   }
 }
 
+// ───────────────────────────────────────────────────────── engagement
+
+/**
+ * Report the player's score to YouTube, which surfaces the highest value ever
+ * sent. The SDK demands a safe integer and rejects with INVALID_PARAMS
+ * otherwise, so the value is coerced and range-checked here rather than
+ * trusting callers. Never rejects.
+ */
+export async function sendScore(value: number): Promise<boolean> {
+  if (!inPlayables) return false;
+  if (!Number.isFinite(value)) return false;
+  const safe = Math.max(0, Math.min(Math.round(value), Number.MAX_SAFE_INTEGER));
+  try {
+    await ytgame.engagement.sendScore({ value: safe });
+    return true;
+  } catch {
+    logError();
+    return false;
+  }
+}
+
 // ────────────────────────────────────────────────────────────── audio
 
 /**

@@ -45,6 +45,15 @@ declare namespace ytgame.system {
   function onResume(callback: () => void): () => void;
 }
 
+declare namespace ytgame.engagement {
+  interface Score {
+    /** Must be an integer, no larger than Number.MAX_SAFE_INTEGER. */
+    value: number;
+  }
+  /** YouTube surfaces the highest value ever sent. Pick one dimension. */
+  function sendScore(score: Score): Promise<void>;
+}
+
 declare namespace ytgame.health {
   function logError(): void;
   function logWarning(): void;

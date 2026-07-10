@@ -59,6 +59,8 @@ export class Game {
   private platformPaused = false;
   private renderLoopRunning = false;
   private readySignalled = false;
+  /** Highest total already reported to YouTube, so we don't resend it. */
+  private lastSentScore = 0;
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement, save: SaveManager) {
     this.save = save;
@@ -132,6 +134,15 @@ export class Game {
   start(): void {
     this.showMenu();
     this.startRenderLoop();
+
+    // A returning player already has a total from cloud save. Report it once
+    // so YouTube reflects their progress even if they quit without finishing
+    // another level this session.
+    const restored = this.save.totalScore;
+    if (restored > 0) {
+      this.lastSentScore = restored;
+      void Playables.sendScore(restored);
+    }
   }
 
   // ────────────────────────────────────────────── platform lifecycle
@@ -229,6 +240,16 @@ export class Game {
     this.save.addCoins(earned);
     const isBest = this.save.recordResult(this.currentLevelId, result.stars, result.total, LEVELS.length);
     const best = this.save.data.scores[this.currentLevelId] ?? result.total;
+
+    // Report progress to YouTube. recordResult() has already folded this run
+    // into the per-level bests, so totalScore is the up-to-date figure. Only
+    // send when it actually grew — YouTube keeps the maximum, so re-sending an
+    // unchanged total is a wasted round-trip.
+    const total = this.save.totalScore;
+    if (total > this.lastSentScore) {
+      this.lastSentScore = total;
+      void Playables.sendScore(total);
+    }
 
     this.state = "results";
     this.input.enabled = false;

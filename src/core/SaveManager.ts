@@ -139,6 +139,18 @@ export class SaveManager {
     return this.writing;
   }
 
+  /**
+   * Sum of the player's best score on every level — the game's single
+   * dimension of progress. YouTube shows the highest value ever reported, so
+   * this must only ever grow: a bad run on one level can't lower it, because
+   * only personal bests are stored.
+   */
+  get totalScore(): number {
+    let sum = 0;
+    for (const key of Object.keys(this.data.scores)) sum += this.data.scores[Number(key)] ?? 0;
+    return sum;
+  }
+
   /** Record a level result; returns true if it beat the previous best. */
   recordResult(levelId: number, stars: number, score: number, totalLevels: number): boolean {
     const d = this.data;
