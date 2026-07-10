@@ -20,6 +20,9 @@ export const TUNING = {
     outOfBoundsY: -6, // fell below arena → fail
     fallEdgeMargin: 0.1, // how far past ground edge before falling
     holeGrip: 0.82, // fraction of a hole's radius the car center must cross to fall in
+    holeSuck: 3.2, // pull toward the hole centre on entry, so it drops in cleanly
+    holeFallDamping: 0.02, // horizontal velocity retained per second while falling
+    holeFailDepth: -0.35, // depth at which the attempt is declared lost
   },
 
   launch: {

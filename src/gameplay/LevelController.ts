@@ -89,6 +89,15 @@ export class LevelController {
       this.audio.land();
       this.camera.addShake(0.12);
     };
+    // The instant the car tips over a lip — long before it hits the failure
+    // depth — kick off the falling animation and its feedback.
+    phys.onHoleEnter = (h) => {
+      if (this.state !== "launched") return;
+      this.car.startFalling();
+      this.effects.dust(h.x, h.z);
+      this.camera.addShake(0.3);
+      this.audio.fail();
+    };
 
     launcher.onLaunch = (power01) => this.handleLaunch(power01);
 
@@ -385,15 +394,12 @@ export class LevelController {
     const phys = this.phys;
     const A = TUNING.attempt;
 
-    // dropped into a pit — resolve as soon as the car is clearly below the
-    // lot, rather than waiting out the full fall to the out-of-bounds plane
-    if (phys.pos.y < -0.9) {
-      for (const h of this.hazards) {
-        if (h.contains(phys)) {
-          this.failAttempt("Down the hole! 🕳️");
-          return;
-        }
-      }
+    // Swallowed by a pit. The car is captured the moment it crosses the lip,
+    // so this only waits long enough for the fall to read on screen before
+    // resolving — no need to trace it down to the out-of-bounds plane.
+    if (phys.capturedBy && phys.pos.y < TUNING.physics.holeFailDepth) {
+      this.failAttempt("Down the hole! 🕳️");
+      return;
     }
 
     // fell off the lot

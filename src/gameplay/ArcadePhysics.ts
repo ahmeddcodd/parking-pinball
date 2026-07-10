@@ -56,6 +56,12 @@ export class ArcadePhysics {
   readonly vel = new Vector3(0, 0, 0);
   airborne = false;
 
+  /**
+   * The hole that swallowed the car, or null. Once set, the car is committed:
+   * it cannot land, collide or climb back out — only a reset clears it.
+   */
+  capturedBy: HoleCollider | null = null;
+
   walls: WallCollider[] = [];
   bumpers: BumperCollider[] = [];
   grounds: GroundRect[] = [];
@@ -69,6 +75,8 @@ export class ArcadePhysics {
   onWallHit: ((impactSpeed: number, x: number, z: number) => void) | null = null;
   onBumperHit: ((b: BumperCollider) => void) | null = null;
   onLand: (() => void) | null = null;
+  /** Fired the instant the car drops into a hole, before it has fallen far. */
+  onHoleEnter: ((h: HoleCollider) => void) | null = null;
 
   private accumulator = 0;
   private settleTimer = 0;
@@ -86,6 +94,7 @@ export class ArcadePhysics {
     this.pos.set(x, 0, z);
     this.vel.setAll(0);
     this.airborne = false;
+    this.capturedBy = null;
     this.accumulator = 0;
     this.settleTimer = 0;
     this.extraDamping = 0;
@@ -136,26 +145,83 @@ export class ArcadePhysics {
    */
   private isOverGround(x: number, z: number): boolean {
     const m = P.fallEdgeMargin;
-    let onLot = false;
     for (const g of this.grounds) {
-      if (Math.abs(x - g.x) <= g.halfW + m && Math.abs(z - g.z) <= g.halfD + m) {
-        onLot = true;
-        break;
-      }
+      if (Math.abs(x - g.x) <= g.halfW + m && Math.abs(z - g.z) <= g.halfD + m) return true;
     }
-    if (!onLot) return false;
+    return false;
+  }
 
+  /** The hole containing this point, if any. */
+  private holeAt(x: number, z: number): HoleCollider | null {
     for (const h of this.holes) {
       const dx = x - h.x;
       const dz = z - h.z;
       const r = h.radius * P.holeGrip;
-      if (dx * dx + dz * dz < r * r) return false;
+      if (dx * dx + dz * dz < r * r) return h;
     }
-    return true;
+    return null;
+  }
+
+  /**
+   * Did the segment a→b pass through a hole's mouth? At 30 u/s a substep moves
+   * the car ~0.25u, but this also guards fast diagonal crossings of a small
+   * pit, where sampling only the end points would miss the mouth entirely.
+   */
+  private holeCrossed(ax: number, az: number, bx: number, bz: number): HoleCollider | null {
+    const sx = bx - ax;
+    const sz = bz - az;
+    const segLenSq = sx * sx + sz * sz;
+    if (segLenSq < 1e-8) return null;
+
+    for (const h of this.holes) {
+      const r = h.radius * P.holeGrip;
+      // closest approach of the segment to the hole centre
+      let t = ((h.x - ax) * sx + (h.z - az) * sz) / segLenSq;
+      t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const cx = ax + sx * t - h.x;
+      const cz = az + sz * t - h.z;
+      if (cx * cx + cz * cz < r * r) return h;
+    }
+    return null;
   }
 
   private substep(dt: number): void {
+    // ── captured: the car is inside a hole and committed to the fall ──
+    // No landing, no collisions, no escape. Horizontal motion is killed
+    // quickly so it drops down the shaft instead of shooting out the side —
+    // without this the car keeps its speed, drifts past the hole's radius
+    // while below the lot, finds solid ground and climbs back on top.
+    if (this.capturedBy) {
+      const keep = Math.pow(P.holeFallDamping, dt);
+      this.vel.x *= keep;
+      this.vel.z *= keep;
+      this.vel.y += P.gravity * dt;
+      this.airborne = true;
+      this.pos.x += this.vel.x * dt;
+      this.pos.y += this.vel.y * dt;
+      this.pos.z += this.vel.z * dt;
+      return;
+    }
+
     const overGround = this.isOverGround(this.pos.x, this.pos.z);
+
+    // At lot level, entering a hole's mouth swallows the car immediately.
+    // Airborne cars (y > 0) sail over — this is only tested on the ground.
+    if (this.pos.y <= 0) {
+      const hole = this.holeAt(this.pos.x, this.pos.z);
+      if (hole) {
+        this.capturedBy = hole;
+        this.airborne = true;
+        // nudge toward the centre so it visibly drops into the mouth
+        const dx = hole.x - this.pos.x;
+        const dz = hole.z - this.pos.z;
+        this.vel.x = this.vel.x * 0.35 + dx * P.holeSuck;
+        this.vel.z = this.vel.z * 0.35 + dz * P.holeSuck;
+        this.vel.y = Math.min(this.vel.y, -1.5); // commit downward at once
+        this.onHoleEnter?.(hole);
+        return;
+      }
+    }
 
     // gravity & landing
     if (this.pos.y > 0 || !overGround) {
@@ -184,10 +250,27 @@ export class ArcadePhysics {
       this.vel.z *= k;
     }
 
-    // integrate
+    // integrate (remember where we were, for the swept hole test below)
+    const px = this.pos.x;
+    const pz = this.pos.z;
     this.pos.x += this.vel.x * dt;
     this.pos.y += this.vel.y * dt;
     this.pos.z += this.vel.z * dt;
+
+    // A fast car can step clean over a hole's mouth in one substep. Catch that
+    // by testing the segment it just travelled, not only its end point.
+    if (this.pos.y <= 0.02) {
+      const hole = this.holeAt(this.pos.x, this.pos.z) ?? this.holeCrossed(px, pz, this.pos.x, this.pos.z);
+      if (hole) {
+        this.capturedBy = hole;
+        this.airborne = true;
+        this.pos.x = hole.x + (this.pos.x - hole.x) * 0.5;
+        this.pos.z = hole.z + (this.pos.z - hole.z) * 0.5;
+        this.vel.y = Math.min(this.vel.y, -1.5);
+        this.onHoleEnter?.(hole);
+        return;
+      }
+    }
 
     // land
     if (this.airborne && this.pos.y <= 0 && this.isOverGround(this.pos.x, this.pos.z)) {

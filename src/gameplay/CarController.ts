@@ -35,6 +35,13 @@ export class CarController {
   private charge = 0; // 0..1 while aiming
   private stretchPulse = 0; // >0 right after launch
   private squashPulse = 0; // >0 right after landing
+
+  // falling-into-a-hole animation
+  private falling = false;
+  private fallT = 0;
+  private fallSpinX = 0;
+  private fallSpinY = 0;
+  private fallTiltDir = 1;
   private prevVelX = 0;
   private prevVelZ = 0;
   private roll = 0;
@@ -196,12 +203,29 @@ export class CarController {
     this.squashPulse = 1;
   }
 
+  /** The car has been swallowed by a hole: tumble in and shrink away. */
+  startFalling(): void {
+    if (this.falling) return;
+    this.falling = true;
+    this.fallT = 0;
+    this.charge = 0;
+    // random tumble so no two falls look the same
+    this.fallSpinX = 3.4 + Math.random() * 2.6;
+    this.fallSpinY = (Math.random() < 0.5 ? -1 : 1) * (2.2 + Math.random() * 2.4);
+    this.fallTiltDir = Math.random() < 0.5 ? -1 : 1;
+  }
+
   place(x: number, z: number, yaw: number): void {
     this.root.position.set(x, 0, z);
     this.yaw = yaw;
     this.root.rotation.set(0, yaw, 0);
     this.roll = 0;
     this.pitch = 0;
+    // clear the fall animation so a retry starts on a clean, full-size car
+    this.falling = false;
+    this.fallT = 0;
+    this.carScale.scaling.set(1, 1, 1);
+    this.shadow.visibility = 1;
     this.shadow.position.set(x, 0.02, z);
   }
 
@@ -210,6 +234,22 @@ export class CarController {
 
     // follow the physics point
     this.root.position.set(phys.pos.x, phys.pos.y, phys.pos.z);
+
+    // Falling into a pit overrides the normal orientation: the car noses in,
+    // tumbles, and shrinks with depth so it reads as dropping away rather
+    // than sinking through the floor.
+    if (this.falling) {
+      this.fallT += dt;
+      this.root.rotation.set(
+        this.pitch - this.fallSpinX * this.fallT,
+        this.yaw + this.fallSpinY * this.fallT,
+        this.roll + this.fallTiltDir * Math.min(this.fallT * 2.2, 0.8)
+      );
+      const shrink = clamp(1 - this.fallT * 0.75, 0.25, 1);
+      this.carScale.scaling.set(shrink, shrink, shrink);
+      this.shadow.visibility = 0;
+      return;
+    }
 
     // face direction of travel
     if (speed > 0.6) {
