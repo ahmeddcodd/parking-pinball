@@ -3,7 +3,7 @@ import { ArcRotateCamera } from "@babylonjs/core/Cameras/arcRotateCamera";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import type { ArcadePhysics } from "./ArcadePhysics";
 import { TUNING } from "../data/tuning";
-import { clamp, damp, lerp, randRange } from "../utils/MathUtils";
+import { clamp, damp, randRange } from "../utils/MathUtils";
 
 const C = TUNING.camera;
 
@@ -29,7 +29,6 @@ export class CameraController {
   private successPoint = new Vector3(0, 0, 0);
   private levelWidth = 12;
   private levelDepth = 22;
-  private beta: number = C.beta;
 
   constructor(scene: Scene) {
     this.camera = new ArcRotateCamera("cam", C.alpha, C.beta, 16, Vector3.Zero(), scene);
@@ -58,22 +57,7 @@ export class CameraController {
   }
 
   private refit(): void {
-    this.beta = this.fitBeta();
     this.overviewRadius = this.fitRadius(this.levelWidth, this.levelDepth);
-  }
-
-  /**
-   * Tilt adapts to the viewport shape. The lots are long and narrow
-   * (portrait-ish). On a tall phone screen a low, isometric tilt frames them
-   * naturally. On a wide desktop screen that same tilt forces the camera far
-   * back to fit the depth, shrinking the lot to a distant strip — so we swing
-   * toward top-down, which trades some 3D drama for a playfield that actually
-   * fills the screen.
-   */
-  private fitBeta(): number {
-    const [lo, hi] = C.betaBlendAspect;
-    const t = clamp((this.aspect() - lo) / (hi - lo), 0, 1);
-    return lerp(C.beta, C.betaWide, t);
   }
 
   /**
@@ -90,8 +74,8 @@ export class CameraController {
     const tz = OVERVIEW_Z;
 
     // ArcRotateCamera eye for alpha = -PI/2 (camera on the -Z side)
-    const sb = Math.sin(this.beta);
-    const cb = Math.cos(this.beta);
+    const sb = Math.sin(C.beta);
+    const cb = Math.cos(C.beta);
     const ex = 0;
     const ey = radius * cb;
     const ez = tz - radius * sb;
@@ -219,7 +203,7 @@ export class CameraController {
       this.curTarget.z + randRange(-s, s)
     );
     this.camera.alpha = C.alpha;
-    this.camera.beta = this.beta;
+    this.camera.beta = C.beta;
     this.camera.radius = this.curRadius;
   }
 }

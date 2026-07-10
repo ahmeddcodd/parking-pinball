@@ -88,13 +88,11 @@ export const TUNING = {
 
   camera: {
     alpha: -Math.PI / 2, // look "up" the arena (+z away from camera)
-    // Tilt from vertical. Tall screens have vertical room to spare, so a
-    // flatter (more top-down) angle spreads the long lot across it. Wide
-    // screens are vertically starved, so a lower, more oblique angle
-    // foreshortens the lot's depth and lets the camera move in closer.
-    beta: 0.78, // ~45° — tall/portrait screens
-    betaWide: 1.22, // ~70° — wide/landscape screens, near-oblique
-    betaBlendAspect: [0.7, 1.7] as [number, number], // aspect range over which beta lerps
+    // Tilt from vertical, identical on every device: the phone framing is the
+    // intended look. On a landscape screen this leaves grass either side of
+    // the portrait-shaped lot (the camera pulls back to fit its depth) — that
+    // letterboxing is the cost of a consistent angle, not a fit bug.
+    beta: 0.78, // ~45°
     followLerp: 4.2,
     radiusLerp: 3.0,
     speedZoom: 0.28, // extra radius per unit of speed
